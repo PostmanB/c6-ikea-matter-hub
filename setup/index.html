@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>C6 IKEA Hub · Setup</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="protocol.js" defer></script><script src="setup.js" defer></script>
+</head>
+<body>
+<main>
+  <header><div class="eyebrow">C6 IKEA HUB · LOCAL CONTROL</div><h1>Four devices.<br>One little hub.</h1>
+    <p class="intro">Pair your bulb and three remotes over USB. Then put them where you want them and let the ESP do the rest.</p>
+    <div class="tags"><span>No smart-home account</span><span>No Wi-Fi password</span><span>No always-on PC</span></div>
+  </header>
+  <section class="card connect-card" aria-labelledby="connect-title">
+    <div class="step">01</div><div class="section-body"><h2 id="connect-title">Connect your ESP</h2>
+      <p>Use desktop Chrome or Edge. Connect the <strong>native USB</strong> socket to your computer with a data cable. Keep the bulb powered and all remotes nearby.</p>
+      <p class="small">Already flashed? Start here. New board? <a href="install.html">Install the firmware first →</a></p>
+      <div class="actions"><button id="connect">Connect ESP</button><button id="disconnect" class="secondary" disabled>Disconnect</button></div>
+      <div id="connection" class="notice" role="status" aria-live="polite">Waiting for a USB connection.</div>
+      <div id="unsupported" class="notice error" hidden>USB setup needs a desktop browser with Web Serial and HTTPS or localhost. Use Chrome or Edge, or follow the console guide.</div>
+    </div>
+  </section>
+  <section class="card" aria-labelledby="pair-title">
+    <div class="step">02</div><div class="section-body"><h2 id="pair-title">Pair one device at a time</h2>
+      <p>Each device joins this ESP’s own network. Start with the bulb, then add the remotes. Use the printed <strong>Matter number</strong>, not IKEA’s direct-pairing procedure.</p>
+      <div id="devices" class="device-grid"></div>
+      <div id="pair-message" class="notice" role="status" aria-live="polite">Connect the ESP to begin. Device numbers stay in this page’s memory and are sent only over USB.</div>
+    </div>
+  </section>
+  <section class="card" aria-labelledby="test-title">
+    <div class="step">03</div><div class="section-body"><h2 id="test-title">Try the light and the remotes</h2>
+      <p>Use these buttons to check the bulb. Then test <strong>each</strong> remote yourself.</p>
+      <div class="actions"><button class="control" data-command="on" disabled>Light on</button><button class="control secondary" data-command="off" disabled>Light off</button><button class="control secondary" data-command="color next" disabled>Next colour</button></div>
+      <label class="brightness" for="brightness">Brightness <output id="brightness-value">50%</output></label>
+      <input id="brightness" type="range" min="1" max="100" value="50" disabled>
+      <p id="capabilities" class="small">Bulb capabilities will appear after pairing.</p>
+      <table><thead><tr><th>On any remote</th><th>Upper button</th><th>Lower button</th></tr></thead><tbody><tr><td>Tap once</td><td>On</td><td>Off</td></tr><tr><td>Double-press</td><td>Next colour</td><td>Previous colour</td></tr><tr><td>Hold, then release</td><td>Brighter</td><td>Dimmer</td></tr></tbody></table>
+      <div id="tests" class="test-list"></div>
+      <div id="test-status" class="notice" role="status" aria-live="polite">Pair all four devices before finishing.</div>
+    </div>
+  </section>
+  <section class="card finish-card" aria-labelledby="finish-title">
+    <div class="step">04</div><div class="section-body"><h2 id="finish-title">Put everything in its place</h2>
+      <p id="finish-summary">Finish pairing and check all three remotes first.</p>
+      <ol><li>Disconnect this page and unplug the ESP from the computer.</li><li>Power the ESP from a USB charger through its <strong>UART / USB-UART socket</strong>. That was the reliable charger-power socket on the tested board.</li><li>Keep the bulb powered. Move the remotes to the door, desk and bedside.</li><li>Allow up to 90 seconds for reconnection. Two bulb flashes indicate that the hub is ready. Pressing a remote during startup skips those flashes.</li><li>Test all three remotes again in their final locations.</li></ol>
+      <p class="small">Pairings survive power loss. Keep the ESP within Thread radio range. The tested firmware supports one KAJPLATS bulb and three two-button BILRESAs; it doesn’t need this page after setup.</p>
+    </div>
+  </section>
+  <details class="card diagnostic"><summary>Connection help and diagnostics</summary>
+    <p>If no firmware status appears, check the native USB socket, close other serial monitors and press the ESP’s RESET button once. Keep a sleepy remote awake during pairing.</p>
+    <button id="refresh" class="secondary" disabled>Refresh status</button>
+    <p class="small">Only selected hub messages are shown. Matter numbers are hidden. No logs or codes are uploaded.</p>
+    <pre id="diagnostics" aria-label="Hub diagnostics"></pre>
+    <a href="../docs/QUICKSTART.md">Console setup instructions</a>
+  </details>
+  <footer>Open firmware · USB setup · Your devices stay local<br><a href="https://github.com/PostmanB/c6-ikea-matter-hub">Source and build instructions</a></footer>
+</main>
+</body>
+</html>

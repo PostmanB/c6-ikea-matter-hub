@@ -1,0 +1,29 @@
+{
+  "flash_settings": {
+    "flash_mode": "dio",
+    "flash_size": "8MB",
+    "flash_freq": "80m"
+  },
+  "files": [
+    {
+      "address": "0x0",
+      "file": "0-bootloader.bin",
+      "sha256": "1827af16242153e9c4eec412befdccd7437f14d389df4bb2e2d9095b63f35856"
+    },
+    {
+      "address": "0x30000",
+      "file": "1-c6_matter_hub.bin",
+      "sha256": "3c7d45123af9d175bd23166cbbd542c8a46331a2db75b7b1f43d227d9a4ee172"
+    },
+    {
+      "address": "0x8000",
+      "file": "2-partition-table.bin",
+      "sha256": "11451f62e2c2106b97cdf5426b8b9e3f558e4f97bc771e8aad8782d9f52e5320"
+    },
+    {
+      "address": "0x630000",
+      "file": "3-paa_cert.bin",
+      "sha256": "6ea6618a2c74f81688b37b1b67951486feae7d7882546f1ac073ea60ce4a52ae"
+    }
+  ]
+}

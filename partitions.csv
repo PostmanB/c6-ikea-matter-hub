@@ -1,0 +1,7 @@
+# Name, Type, SubType, Offset, Size
+# Retain the diagnostic's existing Thread NVS region.
+nvs, data, nvs, 0x9000, 0x6000
+phy_init, data, phy, 0xf000, 0x1000
+matter_nvs, data, nvs, 0x10000, 0x20000
+factory, app, factory, 0x30000, 0x600000
+paa_cert, data, spiffs, 0x630000, 0x80000

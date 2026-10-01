@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>C6 IKEA Hub · First installation</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="https://unpkg.com/esp-web-tools@10.1.1/dist/web/install-button.js?module"></script>
+  <script src="install.js" defer></script>
+</head>
+<body><main>
+  <header><div class="eyebrow">C6 IKEA HUB · FIRST INSTALLATION</div><h1>Start with<br>a new ESP.</h1>
+    <p class="intro">Install the tested firmware on an ESP32-C6-DevKitC-1 with 8 MB flash. Then pair your own IKEA devices.</p>
+    <p><a href="index.html">Already running this hub? Go to device setup →</a></p>
+  </header>
+  <section class="card"><div class="step">01</div><div class="section-body">
+    <h2>Prepare the board</h2>
+    <p>Open this page in desktop Chrome or Edge. Connect the ESP’s <strong>UART / USB-UART socket</strong> with a data cable. Close other serial monitors.</p>
+    <p>If Windows does not show its USB-UART port, install the CP210x driver linked in the <a href="https://github.com/PostmanB/c6-ikea-matter-hub/blob/main/docs/QUICKSTART.md">setup guide</a>. If connection fails, hold BOOT, tap RESET, then release BOOT and try again.</p>
+  </div></section>
+  <section class="card"><div class="step">02</div><div class="section-body">
+    <h2>Install firmware</h2>
+    <div class="notice error">First installation erases the board, including any saved network, device pairings and other firmware. Use this only on the new board you want to turn into a hub.</div>
+    <p><label><input id="confirm-erase" type="checkbox"> This is an ESP32-C6 with 8 MB flash, and I want to erase it and install the hub.</label></p>
+    <esp-web-install-button id="installer" manifest="manifest.json">
+      <button id="install" slot="activate" disabled>Install on this new ESP</button>
+      <span slot="unsupported" class="notice error">Use desktop Chrome or Edge with Web Serial.</span>
+      <span slot="not-allowed" class="notice error">Open this page over HTTPS or localhost.</span>
+    </esp-web-install-button>
+    <p id="install-help" class="small">The installer loads ESP Web Tools from unpkg.com and firmware from this site. Device pairing happens separately over USB. If the install button does not respond, check your Internet connection or use the Windows flashing script.</p>
+  </div></section>
+  <section class="card"><div class="step">03</div><div class="section-body">
+    <h2>Pair your devices</h2>
+    <p>After installation completes, close the installer, unplug the cable and reconnect to the ESP’s <strong>native USB socket</strong>. Open device setup and tap RESET once if needed.</p>
+    <div class="actions"><a href="index.html">Open device setup →</a></div>
+  </div></section>
+  <footer>Experimental firmware · Tested on one 8 MB DevKitC-1<br><a href="https://github.com/PostmanB/c6-ikea-matter-hub">Source, validation and console fallback</a></footer>
+</main></body></html>
