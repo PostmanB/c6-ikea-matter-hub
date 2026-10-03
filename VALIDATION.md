@@ -4,17 +4,18 @@
 
 - ESP-IDF 5.5.5, original Matter/CHIP pins, ESP-HomeKit SDK
   `676fabac4a4a05184be020611cb069faa0016411`: combined build passed.
-- Latest binary: 2,467,040 bytes, 61% of the existing 6 MB app partition free.
+- Latest binary: 2,467,808 bytes, 61% of the existing 6 MB app partition free.
   Static memory report before the final 16-byte code adjustment: DIRAM 277,838
   used / 174,274 remaining; runtime heap with active Wi-Fi/HAP still unmeasured.
 - Coexistence enabled; Matter Wi-Fi commissioning remains disabled; ESP Insights
   disabled. New HomeKit/config storage at 0x6b0000; old storage offsets unchanged.
 - Host schedule tests passed: clock validity, disabled state, two-minute grace,
   reboot/day deduplication, clock rewind, repeated DST hour and CET/CEST offsets.
-- Eight original protocol tests, three network/privacy tests, three firmware
+- Eight original protocol tests, four network/privacy tests, three firmware
   checksum/layout tests and browser JS syntax check passed.
 - Local setup page loads, new forms render, and browser reports no JS errors.
-  Full USB credential provisioning and iPhone pairing remain unverified.
+  USB credential provisioning passed on the physical board; iPhone pairing
+  remains unverified.
 - Pre-update physical status: all three existing remotes subscribed, bulb state
   live, Thread role 3, SRP running, storage healthy, 197,248 bytes internal heap.
 - Full 8 MB pre-update backup passed stub MD5 verification at 115200; a faster
@@ -25,8 +26,19 @@
   sequence acknowledged, 116,024 bytes free heap / 94,208 largest block before
   optional Wi-Fi/HAP activation. Headless UART-powered boot also saved a trace
   with all pairings restored and four startup command acknowledgments.
-- Wi-Fi, NTP, Apple Home/Siri, scheduled actions and unplugged coexistence remain
-  pending private credential provisioning and physical tests.
+- User provisioned Wi-Fi and a HomeKit verifier through the local USB page,
+  restarted and disconnected. Both settings persisted; the schedule remains
+  disabled by choice. No credentials were entered in chat or public files.
+- A diagnostic app-only update passed flash hash verification through native
+  USB. Fresh private backups of home_nvs and Thread/Matter NVS each passed the
+  stub checksum; all pairings recovered after the update.
+- Wi-Fi initializes through the reconnect loop with ESP_OK, but association
+  fails with reason 201 (WIFI_REASON_NO_AP_FOUND in pinned IDF). Apple Home and
+  NTP correctly remain inactive without an IP address. Three remote
+  subscriptions, bulb state, Thread role 3 and SRP remain live while retrying.
+  Heap: 76,152 bytes free / 57,344 largest block / 63,888 minimum observed.
+- Wi-Fi association, NTP, Apple Home/Siri, scheduled actions and unplugged
+  coexistence remain pending corrected private Wi-Fi settings and tests.
 
 The hardware results below describe the previously tested offline release.
 

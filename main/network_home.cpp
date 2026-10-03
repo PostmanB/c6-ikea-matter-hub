@@ -42,6 +42,7 @@ Settings settings;
 nvs_handle_t configStore = 0;
 bool storageOK = false;
 std::atomic<bool> ipReady{false}, clockReady{false}, homeStarted{false};
+std::atomic<int> networkStep{0}, networkError{ESP_OK}, disconnectReason{0};
 QueueHandle_t phoneQueue;
 portMUX_TYPE snapshotLock = portMUX_INITIALIZER_UNLOCKED;
 LightingSnapshot snapshot;
@@ -77,7 +78,11 @@ void syncTime(timeval *) {
     ESP_LOGI(TAG, "Clock synchronized; daily schedules enabled when configured");
 }
 void networkEvent(void *, esp_event_base_t base, int32_t id, void *data) {
-    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) ipReady = false;
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        ipReady = false;
+        disconnectReason = static_cast<wifi_event_sta_disconnected_t *>(data)->reason;
+        ESP_LOGW(TAG, "Wi-Fi disconnected: reason=%d; retrying without changing saved settings", int(disconnectReason));
+    }
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         const auto *event = static_cast<ip_event_got_ip_t *>(data);
         ipReady = true;
@@ -146,43 +151,56 @@ bool startHome(const Settings &boot) {
 void networkTask(void *argument) {
     const Settings boot = *static_cast<Settings *>(argument);
     delete static_cast<Settings *>(argument);
+    networkStep = 1;
     esp_err_t err = esp_netif_init();
     if (err == ESP_OK) {
-        err = esp_event_loop_create_default();
+        networkStep = 2; err = esp_event_loop_create_default();
         if (err == ESP_ERR_INVALID_STATE) err = ESP_OK;
     }
-    if (err == ESP_OK && !esp_netif_create_default_wifi_sta()) err = ESP_ERR_NO_MEM;
+    if (err == ESP_OK) {
+        networkStep = 3;
+        if (!esp_netif_get_handle_from_ifkey("WIFI_STA_DEF") && !esp_netif_create_default_wifi_sta()) err = ESP_ERR_NO_MEM;
+    }
     wifi_init_config_t wifiInit = WIFI_INIT_CONFIG_DEFAULT();
-    if (err == ESP_OK) err = esp_wifi_init(&wifiInit);
+    if (err == ESP_OK) { networkStep = 4; err = esp_wifi_init(&wifiInit); }
     // Keep Wi-Fi credentials out of the Thread NVS partition; our own settings
     // blob in home_nvs is the sole persistent source.
-    if (err == ESP_OK) err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+    if (err == ESP_OK) { networkStep = 5; err = esp_wifi_set_storage(WIFI_STORAGE_RAM); }
     if (err == ESP_OK) err = esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, networkEvent, nullptr);
     if (err == ESP_OK) err = esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, networkEvent, nullptr);
     wifi_config_t config{};
     memcpy(config.sta.ssid, boot.ssid, strlen(boot.ssid)); memcpy(config.sta.password, boot.password, strlen(boot.password));
     config.sta.threshold.authmode = boot.password[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
     config.sta.pmf_cfg.capable = true;
-    if (err == ESP_OK) err = esp_wifi_set_mode(WIFI_MODE_STA);
-    if (err == ESP_OK) err = esp_wifi_set_config(WIFI_IF_STA, &config);
-    if (err == ESP_OK) err = esp_wifi_start();
-    if (err == ESP_OK) err = esp_wifi_set_ps(WIFI_PS_NONE);
+    if (err == ESP_OK) { networkStep = 6; err = esp_wifi_set_mode(WIFI_MODE_STA); }
+    if (err == ESP_OK) { networkStep = 7; err = esp_wifi_set_config(WIFI_IF_STA, &config); }
+    if (err == ESP_OK) { networkStep = 8; err = esp_wifi_start(); }
+    if (err == ESP_OK) { networkStep = 9; err = esp_wifi_set_ps(WIFI_PS_NONE); }
     mbedtls_platform_zeroize(config.sta.password, sizeof(config.sta.password));
     if (err != ESP_OK) {
+        networkError = err;
         ESP_LOGE(TAG, "Optional Wi-Fi failed: %s; Thread control remains active", esp_err_to_name(err));
         vTaskDelete(nullptr); return;
     }
     esp_sntp_config_t timeConfig = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     timeConfig.start = false; timeConfig.sync_cb = syncTime;
-    err = esp_netif_sntp_init(&timeConfig);
+    networkStep = 10; err = esp_netif_sntp_init(&timeConfig);
+    networkError = err;
     bool timeStarted = false, homeAttempted = false;
     unsigned reconnectSeconds = 0;
     while (true) {
-        if (!ipReady && reconnectSeconds++ % 15 == 0) esp_wifi_connect();
+        networkStep = 11;
+        if (!ipReady && reconnectSeconds++ % 15 == 0) {
+            auto result = esp_wifi_connect();
+            if (result != ESP_OK) { networkError = result; ESP_LOGW(TAG, "Wi-Fi connect request: %s", esp_err_to_name(result)); }
+        }
         if (ipReady) {
             reconnectSeconds = 0;
             if (err == ESP_OK && !timeStarted) { timeStarted = esp_netif_sntp_start() == ESP_OK; }
-            if (boot.homeConfigured && !homeAttempted) { homeAttempted = true; homeStarted = startHome(boot); }
+            if (boot.homeConfigured && !homeAttempted) {
+                networkStep = 12; homeAttempted = true; homeStarted = startHome(boot);
+                if (!homeStarted) ESP_LOGE(TAG, "HomeKit startup failed; see homekit diagnostics and free heap");
+            }
             if (homeStarted) {
                 auto state = copySnapshot();
                 if (state.online) {
@@ -265,6 +283,7 @@ void network_home_status() {
         settings.schedule.enabled ? "on" : "off", settings.schedule.hour, settings.schedule.minute, (long)settings.schedule.lastDay);
     ESP_LOGI(TAG, "Wi-Fi configured=%u connected=%u HomeKit configured=%u running=%u optionalStorage=%s",
         bool(settings.ssid[0]), bool(ipReady), bool(settings.homeConfigured), bool(homeStarted), storageOK ? "ok" : "ERROR");
+    ESP_LOGI(TAG, "Network step=%d error=%s disconnectReason=%d", int(networkStep), esp_err_to_name(networkError), int(disconnectReason));
 }
 bool network_home_console(int argc, char **argv, esp_err_t &result) {
     if (!argc || (strcmp(argv[0], "wifi") && strcmp(argv[0], "home") && strcmp(argv[0], "schedule") && strcmp(argv[0], "clock") && strcmp(argv[0], "restart"))) return false;

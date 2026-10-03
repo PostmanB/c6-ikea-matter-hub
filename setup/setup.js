@@ -53,9 +53,10 @@ function render() {
   const networkConfig = connected && hub.networkFirmware && hub.optionalStorage === 'ok' && !pendingPair && hub.pairing === 'idle';
   ['wifi-ssid', 'wifi-password', 'wifi-save', 'schedule-time', 'schedule-save', 'schedule-off', 'restart'].forEach(id => { $(id).disabled = !networkConfig; });
   ['home-pin', 'home-save'].forEach(id => { $(id).disabled = !networkConfig || hub.homeConfigured; });
+  const networkProblem = P.networkProblem(hub);
   notice('network-status', !connected ? 'Connect the ESP to check clock and Apple Home settings.' : !hub.networkFirmware ? 'This firmware has no Wi-Fi/HomeKit configuration. The existing remotes still work.' :
-    `Wi-Fi ${hub.wifiConnected ? 'connected' : hub.wifiConfigured ? 'saved; waiting for connection or restart' : 'not configured'} · HomeKit ${hub.homeRunning ? 'running' : hub.homeConfigured ? 'saved; restart to apply' : 'not configured'} · Clock ${hub.clock} · Daily turn-on ${hub.scheduleEnabled ? hub.scheduleTime : 'disabled'}`,
-    hub.wifiConnected && hub.homeRunning ? 'good' : hub.optionalStorage === 'ERROR' ? 'error' : '');
+    `${networkProblem ? `${networkProblem} ` : ''}Wi-Fi ${hub.wifiConnected ? 'connected' : hub.wifiConfigured ? 'saved; waiting for connection or restart' : 'not configured'} · HomeKit ${hub.homeRunning ? 'running' : hub.homeConfigured ? 'saved; restart to apply' : 'not configured'} · Clock ${hub.clock} · Daily turn-on ${hub.scheduleEnabled ? hub.scheduleTime : 'disabled'}`,
+    hub.wifiConnected && hub.homeRunning ? 'good' : hub.optionalStorage === 'ERROR' || networkProblem ? 'error' : '');
   const readyNetwork = hub.recognized && hub.role >= 2 && hub.srp === 1 && hub.storage === 'ok';
   if (connected) {
     if (!hub.recognized) notice('connection', Date.now() - connectionTime > 20000 ? 'No hub response yet. Check the native USB socket, close other monitors, or press RESET once.' : 'USB connected. Waiting for the hub’s startup and console…');

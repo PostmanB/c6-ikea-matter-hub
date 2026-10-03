@@ -10,6 +10,7 @@
       networkFirmware: false, wifiConfigured: false, wifiConnected: false,
       homeConfigured: false, homeRunning: false, optionalStorage: 'unknown', clock: 'unsynchronized',
       scheduleEnabled: false, scheduleTime: '06:00',
+      networkStep: 0, networkError: 'ESP_OK', disconnectReason: 0,
     };
   }
   function cleanLine(value) {
@@ -23,6 +24,9 @@
   function applyLine(state, raw, timestamp = Date.now()) {
     const line = cleanLine(raw);
     let m;
+    if ((m = line.match(/home: Network step=(\d+) error=(\w+) disconnectReason=(\d+)/))) {
+      state.networkStep = +m[1]; state.networkError = m[2]; state.disconnectReason = +m[3];
+    }
     if ((m = line.match(/home: Wi-Fi configured=(\d) connected=(\d) HomeKit configured=(\d) running=(\d) optionalStorage=(\w+)/))) {
       state.networkFirmware = true; state.wifiConfigured = m[1] === '1'; state.wifiConnected = m[2] === '1';
       state.homeConfigured = m[3] === '1'; state.homeRunning = m[4] === '1'; state.optionalStorage = m[5];
@@ -77,7 +81,15 @@
     }
     return result;
   }
-  const api = {slots, initialState, cleanLine, normalizeCode, applyLine, isMapped, canPair, operational, redact};
+  function networkProblem(state) {
+    if (state.wifiConnected) return '';
+    if (state.networkError !== 'ESP_OK') return `Wi-Fi startup error: ${state.networkError}. Keep diagnostics for troubleshooting.`;
+    if (state.disconnectReason === 201) return 'Wi-Fi network not found. Check its exact name and that 2.4 GHz is enabled, then save Wi-Fi and restart.';
+    if ([202, 204].includes(state.disconnectReason)) return 'Wi-Fi authentication failed. Re-enter the network password, then save Wi-Fi and restart.';
+    if ([210, 211].includes(state.disconnectReason)) return 'Wi-Fi security is incompatible. Use a 2.4 GHz WPA2 or WPA2/WPA3 network.';
+    return '';
+  }
+  const api = {slots, initialState, cleanLine, normalizeCode, applyLine, isMapped, canPair, operational, redact, networkProblem};
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.HubProtocol = api;
 })(typeof globalThis === 'undefined' ? this : globalThis);

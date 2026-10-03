@@ -21,3 +21,13 @@ test('passwords and HomeKit PINs are hidden even after the in-memory secret list
   assert.equal(P.redact('matter esp hub home 39167284'), 'matter esp hub home [settings hidden]');
   assert.equal(P.redact('home: HomeKit verifier saved; note your PIN; restart to apply'), 'home: HomeKit verifier saved; note your PIN; restart to apply');
 });
+test('Wi-Fi failure is actionable and an old disconnect reason clears on connection', () => {
+  const s = P.initialState();
+  assert.equal(P.networkProblem(s), '');
+  P.applyLine(s, 'home: Network step=11 error=ESP_OK disconnectReason=201');
+  assert.match(P.networkProblem(s), /network not found.*2\.4 GHz/);
+  P.applyLine(s, 'home: Network step=11 error=ESP_OK disconnectReason=202');
+  assert.match(P.networkProblem(s), /authentication failed/);
+  P.applyLine(s, 'home: Wi-Fi configured=1 connected=1 HomeKit configured=1 running=1 optionalStorage=ok');
+  assert.equal(P.networkProblem(s), '');
+});

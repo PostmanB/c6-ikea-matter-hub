@@ -37,7 +37,8 @@ and connect native USB. Under Clock and Apple Home:
 2. Choose a unique eight-digit HomeKit PIN, note it privately, and enable HomeKit.
    Wait for “HomeKit verifier saved.” The firmware stores only the SRP salt and
    verifier, not the raw PIN. Re-entering a PIN on a configured board is refused.
-3. Set daily turn-on to 06:00 (or your preferred time).
+3. Optionally set daily turn-on to 06:00 (or your preferred time). Leaving this
+   field unsaved keeps the schedule disabled.
 4. Restart the ESP. Wait for connected Wi-Fi, a synchronized clock, a live bulb,
    restored remote subscriptions and HomeKit running in diagnostics.
 5. On the iPhone: Home > Add Accessory > More Options > C6 IKEA Light > Add
@@ -50,6 +51,16 @@ does not upload credentials or use browser storage. Serial command echoes are
 redacted in its displayed diagnostics. Do not share raw serial captures/backups:
 those may contain secrets. HomeKit pairing keys and configuration are persistent
 in `home_nvs`; SDK auto-erase-on-NVS-error recovery is disabled.
+
+### If Wi-Fi does not connect
+
+The setup page reports saved settings separately from active Wi-Fi and HomeKit.
+"Saved" does not mean a connection succeeded. Network diagnostics include an
+initialization step, ESP error and last disconnect reason without exposing the
+password or PIN. Reason 201 means the network was not found: check the exact
+SSID, 2.4 GHz availability and range. Reason 202 means authentication failed.
+Re-enter Wi-Fi settings, save, then restart. Keep the existing HomeKit PIN;
+Wi-Fi correction does not require a new identity or Matter commissioning.
 
 ## Clock and schedule behavior
 
