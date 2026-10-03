@@ -1,5 +1,27 @@
 # Validation record — 2026-10-01
 
+## Optional Wi-Fi/HomeKit branch — 2026-10-03
+
+- ESP-IDF 5.5.5, original Matter/CHIP pins, ESP-HomeKit SDK
+  `676fabac4a4a05184be020611cb069faa0016411`: combined build passed.
+- Latest binary: 2,467,040 bytes, 61% of the existing 6 MB app partition free.
+  Static memory report before the final 16-byte code adjustment: DIRAM 277,838
+  used / 174,274 remaining; runtime heap with active Wi-Fi/HAP still unmeasured.
+- Coexistence enabled; Matter Wi-Fi commissioning remains disabled; ESP Insights
+  disabled. New HomeKit/config storage at 0x6b0000; old storage offsets unchanged.
+- Host schedule tests passed: clock validity, disabled state, two-minute grace,
+  reboot/day deduplication, clock rewind, repeated DST hour and CET/CEST offsets.
+- Eight original protocol tests, three network/privacy tests, three firmware
+  checksum/layout tests and browser JS syntax check passed.
+- Local setup page loads, new forms render, and browser reports no JS errors.
+  Full USB credential provisioning and iPhone pairing remain unverified.
+- Pre-update physical status: all three existing remotes subscribed, bulb state
+  live, Thread role 3, SRP running, storage healthy, 197,248 bytes internal heap.
+- Full pre-update backup in progress. No new firmware flashed yet. Wi-Fi, NTP,
+  Apple Home/Siri, scheduled actions and unplugged coexistence remain pending.
+
+The hardware results below describe the previously tested offline release.
+
 Verified on the physical C6 using the separate Thread diagnostic:
 - 8 MB flash, C6 rev 0.2, native USB COM8.
 - Native Thread FTD became leader, with local SRP server running.

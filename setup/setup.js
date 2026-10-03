@@ -28,7 +28,7 @@ for (const slot of P.slots.slice(1)) {
 function notice(id, text, kind = '') { const el = $(id); el.textContent = text; el.className = `notice ${kind}`; }
 function diagnostic(raw) {
   const line = P.redact(raw, [...secrets]);
-  if (!/\b(hub|lighting):/.test(line) || /attribute cluster| ep=.*server=/.test(line)) return;
+  if (!/\b(hub|lighting|home):/.test(line) || /attribute cluster| ep=.*server=/.test(line)) return;
   messages.push(line); if (messages.length > 80) messages.shift();
   $('diagnostics').textContent = messages.join('\n');
 }
@@ -50,6 +50,12 @@ function render() {
   $('connect').disabled = connected || closing || !('serial' in navigator) || !window.isSecureContext;
   $('disconnect').disabled = !connected;
   $('refresh').disabled = !connected;
+  const networkConfig = connected && hub.networkFirmware && hub.optionalStorage === 'ok' && !pendingPair && hub.pairing === 'idle';
+  ['wifi-ssid', 'wifi-password', 'wifi-save', 'schedule-time', 'schedule-save', 'schedule-off', 'restart'].forEach(id => { $(id).disabled = !networkConfig; });
+  ['home-pin', 'home-save'].forEach(id => { $(id).disabled = !networkConfig || hub.homeConfigured; });
+  notice('network-status', !connected ? 'Connect the ESP to check clock and Apple Home settings.' : !hub.networkFirmware ? 'This firmware has no Wi-Fi/HomeKit configuration. The existing remotes still work.' :
+    `Wi-Fi ${hub.wifiConnected ? 'connected' : hub.wifiConfigured ? 'saved; waiting for connection or restart' : 'not configured'} · HomeKit ${hub.homeRunning ? 'running' : hub.homeConfigured ? 'saved; restart to apply' : 'not configured'} · Clock ${hub.clock} · Daily turn-on ${hub.scheduleEnabled ? hub.scheduleTime : 'disabled'}`,
+    hub.wifiConnected && hub.homeRunning ? 'good' : hub.optionalStorage === 'ERROR' ? 'error' : '');
   const readyNetwork = hub.recognized && hub.role >= 2 && hub.srp === 1 && hub.storage === 'ok';
   if (connected) {
     if (!hub.recognized) notice('connection', Date.now() - connectionTime > 20000 ? 'No hub response yet. Check the native USB socket, close other monitors, or press RESET once.' : 'USB connected. Waiting for the hub’s startup and console…');
@@ -159,6 +165,7 @@ async function disconnect(showMessage = true) {
   try { await port?.close(); } catch (_) {}
   port = null; reader = null; pendingPair = null; received = ''; secrets.clear();
   document.querySelectorAll('#devices input').forEach(input => { input.value = ''; });
+  ['wifi-ssid', 'wifi-password', 'home-pin'].forEach(id => { $(id).value = ''; });
   closing = false;
   if (showMessage) notice('connection', 'Disconnected. Pairings stay saved on the ESP. Use UART/USB-UART for charger power.');
   render();
@@ -169,5 +176,31 @@ $('refresh').addEventListener('click', () => send('status').catch(error => notic
 document.querySelectorAll('.control').forEach(button => button.addEventListener('click', () => send(button.dataset.command).catch(error => notice('test-status', error.message, 'error'))));
 $('brightness').addEventListener('input', () => { $('brightness-value').textContent = `${$('brightness').value}%`; });
 $('brightness').addEventListener('change', () => send(`level ${$('brightness').value}`).catch(error => notice('test-status', error.message, 'error')));
+const hex = value => [...new TextEncoder().encode(value)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+$('wifi-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    const ssid = $('wifi-ssid').value, password = $('wifi-password').value;
+    if (!ssid || new TextEncoder().encode(ssid).length > 32 || new TextEncoder().encode(password).length > 64 || (password && password.length < 8)) throw new Error('Use a Wi-Fi name of up to 32 bytes and an 8–64 character password, or an empty password for an open network.');
+    secrets.add(password); secrets.add(hex(password)); secrets.add(ssid); secrets.add(hex(ssid));
+    await send(`wifi ${hex(ssid)} ${password ? hex(password) : '-'}`);
+    $('wifi-password').value = '';
+    notice('network-message', 'Wi-Fi settings sent. Wait for “Wi-Fi configuration saved” in diagnostics, then restart to apply.');
+  } catch (error) { notice('network-message', error.message, 'error'); }
+});
+$('home-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    const pin = $('home-pin').value;
+    if (!/^\d{8}$/.test(pin) || /^(\d)\1{7}$/.test(pin) || ['12345678', '87654321'].includes(pin)) throw new Error('Choose 8 digits; avoid repeated digits and counting sequences.');
+    secrets.add(pin);
+    await send(`home ${pin}`);
+    $('home-pin').value = '';
+    notice('network-message', 'HomeKit PIN sent. Wait for “HomeKit verifier saved” in diagnostics, then restart. Keep your PIN for adding the accessory in Home.');
+  } catch (error) { notice('network-message', error.message, 'error'); }
+});
+$('schedule-form').addEventListener('submit', event => { event.preventDefault(); send(`schedule ${$('schedule-time').value}`).catch(error => notice('network-message', error.message, 'error')); });
+$('schedule-off').addEventListener('click', () => send('schedule off').catch(error => notice('network-message', error.message, 'error')));
+$('restart').addEventListener('click', () => send('restart').catch(error => notice('network-message', error.message, 'error')));
 if (!('serial' in navigator) || !window.isSecureContext) { $('unsupported').hidden = false; $('connect').disabled = true; }
 else render();

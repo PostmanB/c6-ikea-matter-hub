@@ -1,6 +1,6 @@
 {
   "name": "C6 IKEA Matter Hub",
-  "version": "2026.10.01",
+  "version": "0.2.0-experimental-2026.10.03",
   "new_install_prompt_erase": false,
   "new_install_improv_wait_time": 0,
   "builds": [

@@ -7,6 +7,9 @@
       pairing: 'unknown', storage: 'unknown', role: 0, srp: 0, bulbState: false,
       rgb: false, white: false, level: null, readySignal: 'unknown', recognized: false,
       ack: 0, activity: {}, error: '', lastStatus: 0,
+      networkFirmware: false, wifiConfigured: false, wifiConnected: false,
+      homeConfigured: false, homeRunning: false, optionalStorage: 'unknown', clock: 'unsynchronized',
+      scheduleEnabled: false, scheduleTime: '06:00',
     };
   }
   function cleanLine(value) {
@@ -20,6 +23,13 @@
   function applyLine(state, raw, timestamp = Date.now()) {
     const line = cleanLine(raw);
     let m;
+    if ((m = line.match(/home: Wi-Fi configured=(\d) connected=(\d) HomeKit configured=(\d) running=(\d) optionalStorage=(\w+)/))) {
+      state.networkFirmware = true; state.wifiConfigured = m[1] === '1'; state.wifiConnected = m[2] === '1';
+      state.homeConfigured = m[3] === '1'; state.homeRunning = m[4] === '1'; state.optionalStorage = m[5];
+    }
+    if ((m = line.match(/home: Clock=(.+) zone=Europe\/Bratislava schedule=(on|off) (\d{2}:\d{2}) lastDay=(\d+)/))) {
+      state.clock = m[1]; state.scheduleEnabled = m[2] === 'on'; state.scheduleTime = m[3];
+    }
     if ((m = line.match(/hub: (bulb|door|desk|bedside) node=0x[0-9a-f]+ paired=(\d) onEP=(\d+) offEP=(\d+) listening=(\d)/i))) {
       state.recognized = true;
       state.devices[m[1]] = {paired: m[2] === '1', on: +m[3], off: +m[4], listening: m[5] === '1'};
@@ -61,6 +71,7 @@
   }
   function redact(line, secrets = []) {
     let result = cleanLine(line).replace(/(matter esp hub pair \w+)\s+\S+/gi, '$1 [code hidden]');
+    result = result.replace(/(matter esp hub (?:wifi|home))\s+[^\r\n]+/gi, '$1 [settings hidden]');
     for (const secret of secrets) {
       if (secret) result = result.split(secret).join('[code hidden]');
     }

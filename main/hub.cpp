@@ -1,5 +1,6 @@
 #include "credentials.h"
 #include "lighting.h"
+#include "network_home.h"
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -378,6 +379,18 @@ static Callback::Callback<OnDeviceConnected> commandConnection(commandConnected,
 static Callback::Callback<OnDeviceConnectionFailure> commandFailure(commandFailed, nullptr);
 
 static void tick(intptr_t) {
+    network_home_publish(lighting_snapshot());
+    if (pairingSlot < 0 && lighting_snapshot().online) {
+        PhoneCommand phone;
+        if (network_home_command(phone)) {
+            cancelReadySignal();
+            if (phone.on >= 0) requestState(phone.on);
+            if (phone.level >= 0 || phone.hue >= 0)
+                lighting_home(phone.level, phone.hue, phone.saturation, phone.on != 0);
+            ESP_LOGI(TAG, "Apple Home command accepted by Matter dispatch queue");
+        }
+        network_home_tick(requestState);
+    }
     if (pairingSlot >= 0 && discoveryDeadline && seconds() >= discoveryDeadline) {
         // Upstream discovery timeout can occur before a PASE proxy exists and
         // then omit the pairing callback. Explicitly clear its discovery state.
@@ -481,6 +494,8 @@ static bool endpointNumber(const char *text, EndpointId &out) {
 }
 static esp_err_t console(int argc, char **argv) {
     esp_matter::lock::ScopedChipStackLock lock(portMAX_DELAY);
+    esp_err_t optionalResult;
+    if (network_home_console(argc, argv, optionalResult)) return optionalResult;
     if (argc == 1 && !strcmp(argv[0], "history")) {
         BootTrace previous;
         size_t length = sizeof(previous);
@@ -494,6 +509,7 @@ static esp_err_t console(int argc, char **argv) {
     if (argc == 1 && !strcmp(argv[0], "status")) {
         ESP_LOGI(TAG, "Startup ready signal: %s", readySignalName());
         lighting_status();
+        network_home_status();
         ESP_LOGI(TAG, "Heap free=%u largest=%u min=%u pairing=%s storage=%s",
                  unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
                  unsigned(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
@@ -660,6 +676,8 @@ extern "C" void app_main() {
         { "hub", "Local three-remote bulb controller", console }
     };
     ESP_ERROR_CHECK(esp_matter::console::add_commands(commands, 1));
+    // Restore optional settings before the periodic CHIP work can inspect them.
+    network_home_init();
     esp_timer_create_args_t timerArgs{};
     timerArgs.callback = timerCallback;
     timerArgs.name = "hub_retry";
