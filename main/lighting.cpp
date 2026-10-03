@@ -28,6 +28,8 @@ bool haveLevel = false, haveFeatures = false, haveCapabilities = false;
 uint32_t features = 0, capabilities = 0;
 int currentLevel = 254, minimumLevel = 1, maximumLevel = 254;
 int minimumMired = 153, maximumMired = 555;
+bool currentOn = false, haveOn = false;
+unsigned currentHue = 0, currentSaturation = 0;
 unsigned paletteIndex = 1;
 struct Preset { const char *name; uint16_t mired, x, y; uint8_t hue, saturation; };
 constexpr Preset palette[] = {
@@ -44,9 +46,10 @@ uint32_t colorSupport() {
 bool presetSupported(unsigned index) {
     return palette[index].mired ? (colorSupport() & 0x10) : (colorSupport() & 0x9);
 }
-enum class Kind { None, Level, Color };
+enum class Kind { None, Level, Color, HueSaturation, LevelOnly };
 struct Command { Kind kind = Kind::None; unsigned value = 0; uint32_t generation = 0; };
 Command pending, sent;
+Command following;
 uint32_t generation = 0;
 bool sending = false;
 unsigned attempts = 0;
@@ -92,6 +95,11 @@ public:
     }
     void OnAttributeData(const ConcreteDataAttributePath &path, TLV::TLVReader *reader, const StatusIB &status) override {
         if (!reader || status.ToChipError() != CHIP_NO_ERROR || reader->GetType() == TLV::kTLVType_Null) return;
+        if (path.mClusterId == 6 && path.mAttributeId == 0) {
+            bool value;
+            if (reader->Get(value) == CHIP_NO_ERROR) { currentOn = value; haveOn = true; }
+            return;
+        }
         uint32_t value;
         if (reader->Get(value) != CHIP_NO_ERROR) return;
         if (path.mClusterId == levelCluster) {
@@ -99,6 +107,8 @@ public:
             if (path.mAttributeId == 2 && value <= 254) minimumLevel = std::max<uint32_t>(1, value);
             if (path.mAttributeId == 3 && value >= 1 && value <= 254) maximumLevel = value;
         } else if (path.mClusterId == colorCluster) {
+            if (path.mAttributeId == 0 && value <= 254) currentHue = value;
+            if (path.mAttributeId == 1 && value <= 254) currentSaturation = value;
             if (path.mAttributeId == 0xfffc) { features = value; haveFeatures = true; }
             if (path.mAttributeId == 0x400a) { capabilities = value; haveCapabilities = true; }
             if (path.mAttributeId == 0x400b && value > 0 && value <= 65535) minimumMired = value;
@@ -123,20 +133,24 @@ void result(CHIP_ERROR error) {
     sending = false;
     if (countResult) countResult(error == CHIP_NO_ERROR);
     if (error == CHIP_NO_ERROR) {
-        if (sent.kind == Kind::Level) currentLevel = sent.value;
+        if (sent.kind == Kind::Level || sent.kind == Kind::LevelOnly) currentLevel = sent.value;
         if (sent.kind == Kind::Color) {
             // Only colour changes write this small cursor; dimming never writes flash.
             if (nvs_set_u32(storage, "palette", sent.value) != ESP_OK || nvs_commit(storage) != ESP_OK)
                 ESP_LOGW(TAG, "Palette cursor could not be saved");
         }
         ESP_LOGI(TAG, "Bulb acknowledged %s %u", sent.kind == Kind::Level ? "level" : "palette", sent.value);
-        if (pending.generation == sent.generation) pending.kind = Kind::None;
+        if (pending.generation == sent.generation) {
+            pending = following;
+            following.kind = Kind::None;
+        }
         attempts = 0;
         commandDue = now();
     } else {
         ESP_LOGW(TAG, "Bulb lighting command: %s", ErrorStr(error));
         if (pending.generation == sent.generation && ++attempts >= 3) {
             pending.kind = Kind::None;
+            following.kind = Kind::None;
             holdSlot = -1;
             ESP_LOGE(TAG, "Lighting stopped after three attempts");
         }
@@ -147,7 +161,21 @@ void connected(void *, Messaging::ExchangeManager &mgr, const SessionHandle &ses
     auto ok = [](const ConcreteCommandPath &, const StatusIB &, const DataModel::NullObjectType &) { result(CHIP_NO_ERROR); };
     auto fail = [](CHIP_ERROR err) { result(err); };
     CHIP_ERROR err;
-    if (sent.kind == Kind::Level) {
+    if (sent.kind == Kind::LevelOnly) {
+        Clusters::LevelControl::Commands::MoveToLevel::Type command;
+        command.level = sent.value;
+        command.transitionTime.SetNonNull(5);
+        command.optionsMask.Set(Clusters::LevelControl::OptionsBitmap::kExecuteIfOff);
+        command.optionsOverride.Set(Clusters::LevelControl::OptionsBitmap::kExecuteIfOff);
+        err = Controller::InvokeCommandRequest(&mgr, session, endpoint, command, ok, fail);
+    } else if (sent.kind == Kind::HueSaturation) {
+        Clusters::ColorControl::Commands::MoveToHueAndSaturation::Type command;
+        command.hue = sent.value >> 8; command.saturation = sent.value & 255;
+        command.transitionTime = 5;
+        command.optionsMask.Set(Clusters::ColorControl::OptionsBitmap::kExecuteIfOff);
+        command.optionsOverride.Set(Clusters::ColorControl::OptionsBitmap::kExecuteIfOff);
+        err = Controller::InvokeCommandRequest(&mgr, session, endpoint, command, ok, fail);
+    } else if (sent.kind == Kind::Level) {
         Clusters::LevelControl::Commands::MoveToLevelWithOnOff::Type command;
         command.level = sent.value;
         command.transitionTime.SetNonNull(5); // Half-second, finite transition.
@@ -195,7 +223,28 @@ void lighting_init(nvs_handle_t handle, void (*callback)(bool)) {
 }
 bool lighting_busy() { return sending; }
 bool lighting_ready() { return state.live && haveLevel && (haveFeatures || haveCapabilities); }
-void lighting_cancel() { holdSlot = -1; pending.kind = Kind::None; }
+void lighting_cancel() { holdSlot = -1; pending.kind = following.kind = Kind::None; }
+LightingSnapshot lighting_snapshot() {
+    LightingSnapshot snapshot;
+    snapshot.online = state.live && haveLevel && haveOn;
+    snapshot.on = currentOn; snapshot.level = (currentLevel * 100 + 127) / 254;
+    snapshot.rgb = colorSupport() & 1;
+    snapshot.hue = currentHue * 360.0f / 254; snapshot.saturation = currentSaturation * 100.0f / 254;
+    return snapshot;
+}
+bool lighting_home(int percent, float hue, float saturation, bool levelTurnsOn) {
+    if (!state.live || !haveLevel || percent > 100 || hue > 360 || saturation > 100) return false;
+    if (hue >= 0 && !(colorSupport() & 1)) return false;
+    lighting_cancel();
+    if (percent >= 0) queue(levelTurnsOn ? Kind::Level : Kind::LevelOnly,
+        percent == 0 ? 0 : std::clamp<int>((percent * 254 + 50) / 100, minimumLevel, std::max(minimumLevel, maximumLevel)));
+    if (hue >= 0 && saturation >= 0) {
+        Command colour{Kind::HueSaturation, (unsigned(hue * 254 / 360 + 0.5f) << 8) | unsigned(saturation * 254 / 100 + 0.5f), ++generation};
+        if (pending.kind == Kind::None) pending = colour; else following = colour;
+        commandDue = now(); attempts = 0;
+    }
+    return true;
+}
 void lighting_hold(int slot, int button, bool pressed) {
     if (!pressed) {
         if (holdSlot == slot && holdButton == button) {
@@ -206,6 +255,7 @@ void lighting_hold(int slot, int button, bool pressed) {
         return;
     }
     if (!state.live || !haveLevel) { ESP_LOGW(TAG, "Brightness state not ready"); return; }
+    lighting_cancel();
     holdSlot = slot; holdButton = button;
     holdUntil = now() + 15000000; // Lost release cannot leave continuous motion running.
     holdNext = now() + 1000000;

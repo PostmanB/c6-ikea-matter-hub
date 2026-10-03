@@ -1,5 +1,13 @@
 # Third-party notices
 
+This branch additionally uses Espressif ESP-HomeKit SDK, pinned by the setup
+script. Its source notices use the Espressif MIT license, limited to use on
+Espressif products. SDK source is fetched rather than vendored; its original
+notices remain in the fetched code; the Espressif HomeKit license text is also
+included in `licenses/ESP_HOMEKIT_LICENSE.txt`. HomeKit firmware includes libsodium,
+JSON parser/generator and mDNS dependencies with their respective licenses.
+The SRP modulus in `main/srp_group.h` is the standard RFC 5054 3072-bit group.
+
 The application source and setup page in this repository are distributed under
 Apache-2.0. This project uses Espressif ESP-IDF, ESP-Matter, OpenThread and
 connectedhomeip. SDK files and modifications retain their upstream copyright

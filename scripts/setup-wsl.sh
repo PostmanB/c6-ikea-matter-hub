@@ -27,6 +27,11 @@ cd ../..
 ./install.sh --no-host-tool
 source ./export.sh
 mkdir -p "$task_root/project"
+if [[ ! -d "$task_root/esp-homekit-sdk/.git" ]]; then
+    git clone --recursive https://github.com/espressif/esp-homekit-sdk.git "$task_root/esp-homekit-sdk"
+fi
+git -C "$task_root/esp-homekit-sdk" checkout 676fabac4a4a05184be020611cb069faa0016411
+export ESP_HOMEKIT_PATH="$task_root/esp-homekit-sdk"
 # Copy sources to the Linux filesystem: Windows checkout paths are unsuitable
 # for the CHIP build scripts. Never overwrite a previous build directory.
 cp -r "$project_source/main" "$project_source/scripts" "$task_root/project/"
@@ -38,6 +43,7 @@ elif [[ ! -f "$task_root/project/paa_cert/manifest.json" ]]; then
 fi
 cd "$task_root/project"
 python scripts/patch-sdk.py "$task_root/esp-matter"
-idf.py -DIDF_TARGET=esp32c6 build
+python scripts/patch-homekit.py "$ESP_HOMEKIT_PATH"
+idf.py -DIDF_TARGET=esp32c6 -DSDKCONFIG="$task_root/project/sdkconfig.home" build
 python scripts/export-build.py build "$project_source/firmware"
 echo "Compiled firmware exported to the Windows project. Use flash-windows.ps1 there."

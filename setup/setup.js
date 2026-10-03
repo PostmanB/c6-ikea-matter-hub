@@ -4,6 +4,7 @@ let hub = P.initialState();
 let port = null, reader = null, writer = null, pollTimer = null;
 let connected = false, closing = false, pendingPair = null, commandQueue = Promise.resolve();
 let received = '', connectionTime = 0, messages = [], secrets = new Set();
+let scanDeadline = 0, displayedNetworks = '';
 const checked = new Set();
 const labels = {bulb: 'KAJPLATS bulb', door: 'Door remote', desk: 'Desk remote', bedside: 'Bedside remote'};
 const $ = id => document.getElementById(id);
@@ -28,7 +29,7 @@ for (const slot of P.slots.slice(1)) {
 function notice(id, text, kind = '') { const el = $(id); el.textContent = text; el.className = `notice ${kind}`; }
 function diagnostic(raw) {
   const line = P.redact(raw, [...secrets]);
-  if (!/\b(hub|lighting):/.test(line) || /attribute cluster| ep=.*server=/.test(line)) return;
+  if (!/\b(hub|lighting|home):/.test(line) || /attribute cluster| ep=.*server=/.test(line)) return;
   messages.push(line); if (messages.length > 80) messages.shift();
   $('diagnostics').textContent = messages.join('\n');
 }
@@ -50,6 +51,34 @@ function render() {
   $('connect').disabled = connected || closing || !('serial' in navigator) || !window.isSecureContext;
   $('disconnect').disabled = !connected;
   $('refresh').disabled = !connected;
+  const networkConfig = connected && hub.networkFirmware && hub.optionalStorage === 'ok' && !pendingPair && hub.pairing === 'idle';
+  if (scanDeadline && Date.now() > scanDeadline && hub.wifiScanState === 'running') {
+    hub.wifiScanState = 'error'; hub.wifiScanError = 'No scan response. Reconnect and retry.';
+    scanDeadline = 0;
+  }
+  const scanning = hub.wifiScanState === 'running';
+  $('wifi-scan').disabled = !networkConfig || !hub.scanSupported || scanning;
+  $('wifi-scan').textContent = scanning ? 'Finding networks…' : 'Find Wi-Fi networks';
+  const networksKey = JSON.stringify(hub.wifiNetworks);
+  if (networksKey !== displayedNetworks) {
+    const selected = $('wifi-networks').value;
+    $('wifi-networks').replaceChildren(new Option(hub.wifiNetworks.length ? 'Choose a network' : 'Scan to find networks', ''));
+    for (const network of hub.wifiNetworks) {
+      const signal = network.rssi >= -60 ? 'strong' : network.rssi >= -75 ? 'fair' : 'weak';
+      // SSIDs are untrusted input. Option text renders them as text, never HTML.
+      $('wifi-networks').add(new Option(`${network.ssid} · ${signal} · ${network.auth === 0 ? 'open' : 'secured'}`, network.hex));
+    }
+    if (hub.wifiNetworks.some(network => network.hex === selected)) $('wifi-networks').value = selected;
+    displayedNetworks = networksKey;
+  }
+  $('wifi-networks').disabled = !networkConfig || scanning || !hub.wifiNetworks.length;
+  $('wifi-scan-status').textContent = !connected ? 'Connect the ESP to find nearby networks.' : !hub.scanSupported ? 'Network discovery needs the updated firmware. You can still enter a network name below.' : scanning ? 'Scanning nearby 2.4 GHz networks. This can take up to 30 seconds.' : hub.wifiScanState === 'error' ? `Scan failed: ${hub.wifiScanError}. Retry, or enter the name manually.` : hub.wifiScanState === 'done' ? hub.wifiNetworks.length ? `Found ${hub.wifiNetworks.length} network${hub.wifiNetworks.length === 1 ? '' : 's'}. Select yours, then enter its password below.` : 'No visible networks found. Check 2.4 GHz Wi-Fi and range, or enter a hidden network name.' : 'Select a nearby network, or enter a hidden network’s name below.';
+  ['wifi-ssid', 'wifi-password', 'wifi-save', 'schedule-time', 'schedule-save', 'schedule-off', 'restart'].forEach(id => { $(id).disabled = !networkConfig; });
+  ['home-pin', 'home-save'].forEach(id => { $(id).disabled = !networkConfig || hub.homeConfigured; });
+  const networkProblem = P.networkProblem(hub);
+  notice('network-status', !connected ? 'Connect the ESP to check clock and Apple Home settings.' : !hub.networkFirmware ? 'This firmware has no Wi-Fi/HomeKit configuration. The existing remotes still work.' :
+    `${networkProblem ? `${networkProblem} ` : ''}Wi-Fi ${hub.wifiConnected ? 'connected' : hub.wifiConfigured ? 'saved; waiting for connection or restart' : 'not configured'} · HomeKit ${hub.homeRunning ? 'running' : hub.homeConfigured ? 'saved; restart to apply' : 'not configured'} · Clock ${hub.clock} · Daily turn-on ${hub.scheduleEnabled ? hub.scheduleTime : 'disabled'}`,
+    !connected ? '' : hub.wifiConnected && hub.homeRunning ? 'good' : hub.optionalStorage === 'ERROR' || networkProblem ? 'error' : '');
   const readyNetwork = hub.recognized && hub.role >= 2 && hub.srp === 1 && hub.storage === 'ok';
   if (connected) {
     if (!hub.recognized) notice('connection', Date.now() - connectionTime > 20000 ? 'No hub response yet. Check the native USB socket, close other monitors, or press RESET once.' : 'USB connected. Waiting for the hub’s startup and console…');
@@ -136,6 +165,7 @@ async function connect() {
     await port.open({baudRate: 115200});
     await port.setSignals({dataTerminalReady: false, requestToSend: false});
     hub = P.initialState(); checked.clear();
+    scanDeadline = 0; displayedNetworks = '';
     document.querySelectorAll('#tests input').forEach(input => { input.checked = false; });
     received = ''; messages = []; secrets.clear(); closing = false; connected = true;
     connectionTime = Date.now();
@@ -158,7 +188,9 @@ async function disconnect(showMessage = true) {
   writer = null;
   try { await port?.close(); } catch (_) {}
   port = null; reader = null; pendingPair = null; received = ''; secrets.clear();
+  scanDeadline = 0; hub.wifiNetworks = []; hub.wifiScanState = 'idle';
   document.querySelectorAll('#devices input').forEach(input => { input.value = ''; });
+  ['wifi-ssid', 'wifi-password', 'home-pin'].forEach(id => { $(id).value = ''; });
   closing = false;
   if (showMessage) notice('connection', 'Disconnected. Pairings stay saved on the ESP. Use UART/USB-UART for charger power.');
   render();
@@ -169,5 +201,43 @@ $('refresh').addEventListener('click', () => send('status').catch(error => notic
 document.querySelectorAll('.control').forEach(button => button.addEventListener('click', () => send(button.dataset.command).catch(error => notice('test-status', error.message, 'error'))));
 $('brightness').addEventListener('input', () => { $('brightness-value').textContent = `${$('brightness').value}%`; });
 $('brightness').addEventListener('change', () => send(`level ${$('brightness').value}`).catch(error => notice('test-status', error.message, 'error')));
+const hex = value => [...new TextEncoder().encode(value)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+$('wifi-scan').addEventListener('click', async () => {
+  hub.wifiScanState = 'running'; hub.wifiScanError = ''; hub.wifiNetworks = [];
+  scanDeadline = Date.now() + 30000; render();
+  try { await send('wifi scan'); }
+  catch (error) { hub.wifiScanState = 'error'; hub.wifiScanError = error.message; scanDeadline = 0; render(); }
+});
+$('wifi-networks').addEventListener('change', () => {
+  const network = hub.wifiNetworks.find(value => value.hex === $('wifi-networks').value);
+  if (network) { $('wifi-ssid').value = network.ssid; $('wifi-password').value = ''; $('wifi-password').focus(); }
+});
+$('wifi-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    const ssid = $('wifi-ssid').value, password = $('wifi-password').value;
+    const selected = hub.wifiNetworks.find(value => value.hex === $('wifi-networks').value && value.ssid === ssid);
+    const ssidHex = selected ? selected.hex : hex(ssid);
+    if (!ssid || ssidHex.length > 64 || new TextEncoder().encode(password).length > 64 || (password && password.length < 8)) throw new Error('Use a Wi-Fi name of up to 32 bytes and an 8–64 character password, or an empty password for an open network.');
+    secrets.add(password); secrets.add(hex(password)); secrets.add(ssid); secrets.add(ssidHex);
+    await send(`wifi ${ssidHex} ${password ? hex(password) : '-'}`);
+    $('wifi-password').value = '';
+    notice('network-message', 'Wi-Fi settings sent. Wait for “Wi-Fi configuration saved” in diagnostics, then restart to apply.');
+  } catch (error) { notice('network-message', error.message, 'error'); }
+});
+$('home-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    const pin = $('home-pin').value;
+    if (!/^\d{8}$/.test(pin) || /^(\d)\1{7}$/.test(pin) || ['12345678', '87654321'].includes(pin)) throw new Error('Choose 8 digits; avoid repeated digits and counting sequences.');
+    secrets.add(pin);
+    await send(`home ${pin}`);
+    $('home-pin').value = '';
+    notice('network-message', 'HomeKit PIN sent. Wait for “HomeKit verifier saved” in diagnostics, then restart. Keep your PIN for adding the accessory in Home.');
+  } catch (error) { notice('network-message', error.message, 'error'); }
+});
+$('schedule-form').addEventListener('submit', event => { event.preventDefault(); send(`schedule ${$('schedule-time').value}`).catch(error => notice('network-message', error.message, 'error')); });
+$('schedule-off').addEventListener('click', () => send('schedule off').catch(error => notice('network-message', error.message, 'error')));
+$('restart').addEventListener('click', () => send('restart').catch(error => notice('network-message', error.message, 'error')));
 if (!('serial' in navigator) || !window.isSecureContext) { $('unsupported').hidden = false; $('connect').disabled = true; }
 else render();

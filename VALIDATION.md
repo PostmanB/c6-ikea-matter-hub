@@ -1,5 +1,57 @@
 # Validation record — 2026-10-01
 
+## Optional Wi-Fi/HomeKit branch — 2026-10-03
+
+- ESP-IDF 5.5.5, original Matter/CHIP pins, ESP-HomeKit SDK
+  `676fabac4a4a05184be020611cb069faa0016411`: combined build passed.
+- Latest binary: 2,474,384 bytes, 61% of the existing 6 MB app partition free.
+  Static memory report before the final 16-byte code adjustment: DIRAM 277,838
+  used / 174,274 remaining; runtime heap with active Wi-Fi/HAP still unmeasured.
+- Coexistence enabled; Matter Wi-Fi commissioning remains disabled; ESP Insights
+  disabled. New HomeKit/config storage at 0x6b0000; old storage offsets unchanged.
+- Host schedule tests passed: clock validity, disabled state, two-minute grace,
+  reboot/day deduplication, clock rewind, repeated DST hour and CET/CEST offsets.
+- Eight original protocol tests, six network/privacy tests, three firmware
+  checksum/layout tests and browser JS syntax check passed.
+- Local setup page loads, new forms render, and browser reports no JS errors.
+  USB credential provisioning passed on the physical board; iPhone pairing
+  remains unverified.
+- Pre-update physical status: all three existing remotes subscribed, bulb state
+  live, Thread role 3, SRP running, storage healthy, 197,248 bytes internal heap.
+- Full 8 MB pre-update backup passed stub MD5 verification at 115200; a faster
+  attempt was rejected on an incomplete packet. All four update images flashed
+  successfully and passed esptool verification, without any credential erase.
+- Updated physical hub booted: all three remote subscriptions recovered, live
+  bulb state, Thread role 3/SRP running, healthy old/new storage, two-flash ready
+  sequence acknowledged, 116,024 bytes free heap / 94,208 largest block before
+  optional Wi-Fi/HAP activation. Headless UART-powered boot also saved a trace
+  with all pairings restored and four startup command acknowledgments.
+- User provisioned Wi-Fi and a HomeKit verifier through the local USB page,
+  restarted and disconnected. Both settings persisted; the schedule remains
+  disabled by choice. No credentials were entered in chat or public files.
+- A diagnostic app-only update passed flash hash verification through native
+  USB. Fresh private backups of home_nvs and Thread/Matter NVS each passed the
+  stub checksum; all pairings recovered after the update.
+- Initially Wi-Fi initialized with ESP_OK but association failed with reason
+  201 and a scan returned zero networks. Added the explicit
+  esp_coex_wifi_i154_enable call used by the pinned ESP-IDF Thread example;
+  Matter's Thread-only platform did not call it. The original saved credentials
+  then connected successfully, without any Wi-Fi configuration change.
+- Final scanner/coexistence app-only update passed flash hash verification.
+  Physical asynchronous scan completed in five seconds and found four access
+  points. Wi-Fi connected, NTP synchronized to CEST, and HomeKit reported running.
+  All three remote subscriptions, bulb state, readiness signal, Thread role 3
+  and SRP recovered concurrently. Both storage regions healthy; schedule off.
+  Heap: 45,884 bytes free / 25,600 largest block / 33,972 minimum observed.
+- Setup-page discovery includes UTF-8 SSIDs, signal/security labels, strongest
+  duplicate selection, manual hidden-name entry, timeouts and firmware feature
+  gating. SSIDs are plain DOM text and redacted from displayed diagnostics.
+  Host tests cover duplicates, malformed names, fresh scans and error recovery.
+- Browser USB scan interaction, iPhone pairing/Siri, scheduled actions and
+  unplugged combined-radio recovery remain pending physical user tests.
+
+The hardware results below describe the previously tested offline release.
+
 Verified on the physical C6 using the separate Thread diagnostic:
 - 8 MB flash, C6 rev 0.2, native USB COM8.
 - Native Thread FTD became leader, with local SRP server running.

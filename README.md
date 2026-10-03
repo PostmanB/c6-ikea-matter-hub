@@ -1,5 +1,10 @@
 # C6 IKEA Matter Hub
 
+**This development branch adds optional Wi-Fi, daily turn-on schedules and
+Apple Home/HAP control. It compiles, but combined hardware validation is pending.**
+See [Apple Home and schedules](docs/APPLE_HOME_AND_SCHEDULES.md). The published
+main-branch installer remains the previously tested offline firmware.
+
 One ESP32-C6. One KAJPLATS bulb. Three BILRESA remotes. Local On/Off, brightness
 and colour control, with no always-on computer or smart-home hub.
 
@@ -39,7 +44,7 @@ cancels the flashes so the requested control takes priority.
 The ESP creates an isolated Thread network, runs its own SRP/DNS-SD services and
 acts as the Matter commissioner/controller. Devices join its own Matter fabric.
 A border router is unnecessary for traffic that stays inside this Thread network.
-Wi-Fi is disabled. USB is needed for setup and diagnostics, not daily operation.
+Wi-Fi is optional in this branch. USB is needed for setup and diagnostics, not daily operation.
 
 BILRESA exposes Generic Switch events. The observed two-button descriptor does
 not provide the Binding/OnOff-client combination needed for direct bulb commands.
@@ -67,8 +72,8 @@ versions, limitations and source links in [the development guide](docs/DEVELOPME
 - Charger-safe console/log guards, bounded startup traces, duplicate-event
   suppression and finite held-button dimming with a 15-second safety limit.
 
-Each new board creates its own random credentials. Runtime stays local;
-Internet is used only to download the project or browser-installer dependencies.
+Each new board creates its own random credentials. Light control stays local;
+optional Wi-Fi clock synchronization uses Internet NTP, including after power cuts.
 The pairing wizard also works from localhost after downloading the repository.
 
 ## Build or contribute
@@ -83,12 +88,22 @@ Run the setup-protocol regression tests with Node.js:
 
 ```text
 node --test tests/protocol.test.js tests/release.test.js
+node --test tests/network-protocol.test.js
 ```
 
 See [VALIDATION.md](VALIDATION.md) for measured build sizes, hardware results,
 charger-power limitations and the separate validation status of the setup UI.
 The USB wizard and browser installer still need an end-to-end run on a fresh
 friend's board; their UI/protocol checks do not establish that hardware result.
+
+The combined branch also uses ESP-HomeKit SDK at
+`676fabac4a4a05184be020611cb069faa0016411`. Both setup/build helpers require this
+pinned checkout. Host schedule tests can be run with:
+
+```sh
+g++ -std=c++17 -Wall -Wextra -Werror -Imain tests/schedule.test.cpp -o /tmp/c6-schedule-test
+/tmp/c6-schedule-test
+```
 
 Project source is licensed under [Apache-2.0](LICENSE). Third-party SDK code and
 public attestation certificates retain their respective terms; see
