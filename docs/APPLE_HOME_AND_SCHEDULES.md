@@ -33,7 +33,9 @@ credentials and records remain unchanged. A full backup precedes flashing.
 Start `scripts/open-setup.ps1`, open the local USB setup page in Chrome or Edge,
 and connect native USB. Under Clock and Apple Home:
 
-1. Enter the 2.4 GHz Wi-Fi SSID/password and Save Wi-Fi. Wait for its save message.
+1. Click Find Wi-Fi networks and select your 2.4 GHz network. Enter its password
+   and Save Wi-Fi. Wait for its save message. Hidden network names can still be
+   entered manually; names are case-sensitive.
 2. Choose a unique eight-digit HomeKit PIN, note it privately, and enable HomeKit.
    Wait for “HomeKit verifier saved.” The firmware stores only the SRP salt and
    verifier, not the raw PIN. Re-entering a PIN on a configured board is refused.
@@ -61,6 +63,14 @@ password or PIN. Reason 201 means the network was not found: check the exact
 SSID, 2.4 GHz availability and range. Reason 202 means authentication failed.
 Re-enter Wi-Fi settings, save, then restart. Keep the existing HomeKit PIN;
 Wi-Fi correction does not require a new identity or Matter commissioning.
+
+Discovery runs on the C6 and sends results over USB, without an Internet request.
+The list shows up to 20 access points, deduplicated by network name and ordered
+by strongest signal. Scanning temporarily pauses connection retries and uses a
+bounded asynchronous scan; it never waits under the Matter stack lock. It also
+works before Wi-Fi credentials are configured. Hidden networks remain a manual
+entry. A scan does not change saved settings. Network names stay in page memory
+and are cleared on USB disconnect. Only visible 2.4 GHz networks can appear.
 
 ## Clock and schedule behavior
 
@@ -91,6 +101,7 @@ The following commands use the existing `matter esp hub` prefix:
 ```text
 matter esp hub clock
 matter esp hub home
+matter esp hub wifi scan
 matter esp hub schedule 06:00
 matter esp hub schedule off
 matter esp hub restart
@@ -112,6 +123,11 @@ that conflict; Matter's network commissioning remains Thread-only.
 The C6 has a shared Wi-Fi/BLE/802.15.4 radio. ESP-IDF categorizes Wi-Fi STA with
 a Thread router as supported with unstable performance (C1). Software radio
 coexistence is enabled, Wi-Fi power saving is disabled, and buffers are bounded.
+The optional network startup explicitly calls `esp_coex_wifi_i154_enable`,
+following ESP-IDF's native Thread example; the Thread-only Matter platform does
+not call it. Omitting this call on the tested board yielded empty scans and
+reason 201 even with correct credentials. With it, scanning, Wi-Fi association,
+NTP, HomeKit startup and all three remote subscriptions recovered together.
 These settings do not establish reliable coexistence: test actual remotes,
 bulb commands, HomeKit traffic, reconnection and power cycles before distributing
 this firmware. If it fails, a separate Wi-Fi HomeKit processor would keep the

@@ -4,14 +4,14 @@
 
 - ESP-IDF 5.5.5, original Matter/CHIP pins, ESP-HomeKit SDK
   `676fabac4a4a05184be020611cb069faa0016411`: combined build passed.
-- Latest binary: 2,467,808 bytes, 61% of the existing 6 MB app partition free.
+- Latest binary: 2,474,384 bytes, 61% of the existing 6 MB app partition free.
   Static memory report before the final 16-byte code adjustment: DIRAM 277,838
   used / 174,274 remaining; runtime heap with active Wi-Fi/HAP still unmeasured.
 - Coexistence enabled; Matter Wi-Fi commissioning remains disabled; ESP Insights
   disabled. New HomeKit/config storage at 0x6b0000; old storage offsets unchanged.
 - Host schedule tests passed: clock validity, disabled state, two-minute grace,
   reboot/day deduplication, clock rewind, repeated DST hour and CET/CEST offsets.
-- Eight original protocol tests, four network/privacy tests, three firmware
+- Eight original protocol tests, six network/privacy tests, three firmware
   checksum/layout tests and browser JS syntax check passed.
 - Local setup page loads, new forms render, and browser reports no JS errors.
   USB credential provisioning passed on the physical board; iPhone pairing
@@ -32,13 +32,23 @@
 - A diagnostic app-only update passed flash hash verification through native
   USB. Fresh private backups of home_nvs and Thread/Matter NVS each passed the
   stub checksum; all pairings recovered after the update.
-- Wi-Fi initializes through the reconnect loop with ESP_OK, but association
-  fails with reason 201 (WIFI_REASON_NO_AP_FOUND in pinned IDF). Apple Home and
-  NTP correctly remain inactive without an IP address. Three remote
-  subscriptions, bulb state, Thread role 3 and SRP remain live while retrying.
-  Heap: 76,152 bytes free / 57,344 largest block / 63,888 minimum observed.
-- Wi-Fi association, NTP, Apple Home/Siri, scheduled actions and unplugged
-  coexistence remain pending corrected private Wi-Fi settings and tests.
+- Initially Wi-Fi initialized with ESP_OK but association failed with reason
+  201 and a scan returned zero networks. Added the explicit
+  esp_coex_wifi_i154_enable call used by the pinned ESP-IDF Thread example;
+  Matter's Thread-only platform did not call it. The original saved credentials
+  then connected successfully, without any Wi-Fi configuration change.
+- Final scanner/coexistence app-only update passed flash hash verification.
+  Physical asynchronous scan completed in five seconds and found four access
+  points. Wi-Fi connected, NTP synchronized to CEST, and HomeKit reported running.
+  All three remote subscriptions, bulb state, readiness signal, Thread role 3
+  and SRP recovered concurrently. Both storage regions healthy; schedule off.
+  Heap: 45,884 bytes free / 25,600 largest block / 33,972 minimum observed.
+- Setup-page discovery includes UTF-8 SSIDs, signal/security labels, strongest
+  duplicate selection, manual hidden-name entry, timeouts and firmware feature
+  gating. SSIDs are plain DOM text and redacted from displayed diagnostics.
+  Host tests cover duplicates, malformed names, fresh scans and error recovery.
+- Browser USB scan interaction, iPhone pairing/Siri, scheduled actions and
+  unplugged combined-radio recovery remain pending physical user tests.
 
 The hardware results below describe the previously tested offline release.
 

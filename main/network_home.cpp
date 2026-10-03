@@ -15,6 +15,7 @@
 #include <esp_netif_sntp.h>
 #include <esp_random.h>
 #include <esp_wifi.h>
+#include <esp_coexist.h>
 #include <esp_system.h>
 #include <nvs_flash.h>
 #include <mbedtls/bignum.h>
@@ -43,6 +44,8 @@ nvs_handle_t configStore = 0;
 bool storageOK = false;
 std::atomic<bool> ipReady{false}, clockReady{false}, homeStarted{false};
 std::atomic<int> networkStep{0}, networkError{ESP_OK}, disconnectReason{0};
+std::atomic<bool> networkTaskStarted{false}, wifiConnecting{false}, scanFinished{false};
+std::atomic<int> scanState{0}, scanResult{0}; // idle, queued, running
 QueueHandle_t phoneQueue;
 portMUX_TYPE snapshotLock = portMUX_INITIALIZER_UNLOCKED;
 LightingSnapshot snapshot;
@@ -79,15 +82,43 @@ void syncTime(timeval *) {
 }
 void networkEvent(void *, esp_event_base_t base, int32_t id, void *data) {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        ipReady = false;
+        ipReady = false; wifiConnecting = false;
         disconnectReason = static_cast<wifi_event_sta_disconnected_t *>(data)->reason;
         ESP_LOGW(TAG, "Wi-Fi disconnected: reason=%d; retrying without changing saved settings", int(disconnectReason));
     }
+    if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
+        scanResult = static_cast<wifi_event_sta_scan_done_t *>(data)->status;
+        scanFinished = true;
+    }
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         const auto *event = static_cast<ip_event_got_ip_t *>(data);
-        ipReady = true;
+        ipReady = true; wifiConnecting = false;
         ESP_LOGI(TAG, "Wi-Fi connected; IP=" IPSTR, IP2STR(&event->ip_info.ip));
     }
+}
+void scanFailed(esp_err_t error, int status = 0) {
+    scanState = 0;
+    ESP_LOGW(TAG, "Wi-Fi scan failed error=%s status=%d", esp_err_to_name(error), status);
+}
+void reportScan() {
+    uint16_t total = 0, count = 20;
+    wifi_ap_record_t records[20]{};
+    esp_err_t result = esp_wifi_scan_get_ap_num(&total);
+    if (result == ESP_OK) result = esp_wifi_scan_get_ap_records(&count, records);
+    else esp_wifi_clear_ap_list();
+    if (result != ESP_OK) { esp_wifi_clear_ap_list(); scanFailed(result); return; }
+    unsigned shown = 0;
+    for (uint16_t i = 0; i < count; ++i) {
+        const size_t length = strnlen(reinterpret_cast<const char *>(records[i].ssid), 32);
+        if (!length) continue; // Hidden networks can still be entered manually.
+        char encoded[65];
+        for (size_t j = 0; j < length; ++j) snprintf(encoded + j * 2, 3, "%02x", records[i].ssid[j]);
+        ESP_LOGI(TAG, "Wi-Fi AP ssid=%s rssi=%d auth=%u channel=%u", encoded, records[i].rssi,
+            unsigned(records[i].authmode), unsigned(records[i].primary));
+        ++shown;
+    }
+    scanState = 0;
+    ESP_LOGI(TAG, "Wi-Fi scan done count=%u total=%u", shown, unsigned(total));
 }
 int identify(hap_acc_t *) { ESP_LOGI(TAG, "Apple Home identify request"); return HAP_SUCCESS; }
 int readCharacteristic(hap_char_t *hc, hap_status_t *status, void *, void *) {
@@ -173,26 +204,52 @@ void networkTask(void *argument) {
     config.sta.threshold.authmode = boot.password[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
     config.sta.pmf_cfg.capable = true;
     if (err == ESP_OK) { networkStep = 6; err = esp_wifi_set_mode(WIFI_MODE_STA); }
-    if (err == ESP_OK) { networkStep = 7; err = esp_wifi_set_config(WIFI_IF_STA, &config); }
+    if (err == ESP_OK && boot.ssid[0]) { networkStep = 7; err = esp_wifi_set_config(WIFI_IF_STA, &config); }
     if (err == ESP_OK) { networkStep = 8; err = esp_wifi_start(); }
+    // Matter's Thread-only platform does not enable Wi-Fi/802.15.4 sharing.
+    // Follow ESP-IDF's native Thread example once both radio stacks exist.
+    if (err == ESP_OK) { networkStep = 13; err = esp_coex_wifi_i154_enable(); }
     if (err == ESP_OK) { networkStep = 9; err = esp_wifi_set_ps(WIFI_PS_NONE); }
     mbedtls_platform_zeroize(config.sta.password, sizeof(config.sta.password));
     if (err != ESP_OK) {
         networkError = err;
         ESP_LOGE(TAG, "Optional Wi-Fi failed: %s; Thread control remains active", esp_err_to_name(err));
+        if (scanState) scanFailed(err);
+        networkTaskStarted = false;
         vTaskDelete(nullptr); return;
     }
     esp_sntp_config_t timeConfig = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     timeConfig.start = false; timeConfig.sync_cb = syncTime;
-    networkStep = 10; err = esp_netif_sntp_init(&timeConfig);
+    networkStep = 10; err = boot.ssid[0] ? esp_netif_sntp_init(&timeConfig) : ESP_OK;
     networkError = err;
     bool timeStarted = false, homeAttempted = false;
-    unsigned reconnectSeconds = 0;
+    unsigned reconnectSeconds = 0, scanWaitSeconds = 0;
     while (true) {
         networkStep = 11;
-        if (!ipReady && reconnectSeconds++ % 15 == 0) {
+        if (scanState == 1) {
+            if (!wifiConnecting) {
+                wifi_scan_config_t scan{};
+                scan.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+                scan.scan_time.active.min = 30; scan.scan_time.active.max = 120;
+                scanFinished = false; scanState = 2; scanWaitSeconds = 0;
+                auto result = esp_wifi_scan_start(&scan, false);
+                if (result != ESP_OK) scanFailed(result);
+                else ESP_LOGI(TAG, "Wi-Fi scan started");
+            } else if (++scanWaitSeconds >= 20) scanFailed(ESP_ERR_TIMEOUT);
+        } else if (scanState == 2) {
+            if (scanFinished.exchange(false)) {
+                if (scanResult == 0) reportScan();
+                else { esp_wifi_clear_ap_list(); scanFailed(ESP_FAIL, scanResult); }
+            } else if (++scanWaitSeconds >= 20) {
+                esp_wifi_scan_stop(); esp_wifi_clear_ap_list(); scanFailed(ESP_ERR_TIMEOUT);
+            }
+        } else scanWaitSeconds = 0;
+        // Scanning is asynchronous and temporarily pauses our reconnect requests.
+        // It never waits under the CHIP lock or changes credentials/pairings.
+        if (boot.ssid[0] && !scanState && !ipReady && !wifiConnecting && reconnectSeconds++ % 15 == 0) {
+            wifiConnecting = true;
             auto result = esp_wifi_connect();
-            if (result != ESP_OK) { networkError = result; ESP_LOGW(TAG, "Wi-Fi connect request: %s", esp_err_to_name(result)); }
+            if (result != ESP_OK) { wifiConnecting = false; networkError = result; ESP_LOGW(TAG, "Wi-Fi connect request: %s", esp_err_to_name(result)); }
         }
         if (ipReady) {
             reconnectSeconds = 0;
@@ -214,6 +271,14 @@ void networkTask(void *argument) {
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
+}
+esp_err_t launchNetworkTask() {
+    if (networkTaskStarted.exchange(true)) return ESP_OK;
+    auto *boot = new (std::nothrow) Settings(settings);
+    if (!boot || xTaskCreate(networkTask, "hub_network", 8192, boot, 2, nullptr) != pdPASS) {
+        delete boot; networkTaskStarted = false; return ESP_ERR_NO_MEM;
+    }
+    return ESP_OK;
 }
 // Generate an SRP salt/verifier using the SDK's standard 3072-bit group. The
 // raw PIN only exists during this calculation and is never persisted.
@@ -257,10 +322,7 @@ void network_home_init() {
     }
     if (!storageOK || !phoneQueue) { ESP_LOGE(TAG, "Optional settings unavailable; no storage erased; existing Thread hub continues"); return; }
     if (!settings.ssid[0]) { ESP_LOGI(TAG, "Wi-Fi unconfigured; offline Thread control active"); return; }
-    auto *boot = new (std::nothrow) Settings(settings);
-    if (!boot || xTaskCreate(networkTask, "hub_network", 8192, boot, 2, nullptr) != pdPASS) {
-        delete boot; ESP_LOGE(TAG, "Optional network task unavailable");
-    }
+    if (launchNetworkTask() != ESP_OK) ESP_LOGE(TAG, "Optional network task unavailable");
 }
 void network_home_publish(const LightingSnapshot &state) {
     portENTER_CRITICAL(&snapshotLock); snapshot = state; portEXIT_CRITICAL(&snapshotLock);
@@ -284,10 +346,20 @@ void network_home_status() {
     ESP_LOGI(TAG, "Wi-Fi configured=%u connected=%u HomeKit configured=%u running=%u optionalStorage=%s",
         bool(settings.ssid[0]), bool(ipReady), bool(settings.homeConfigured), bool(homeStarted), storageOK ? "ok" : "ERROR");
     ESP_LOGI(TAG, "Network step=%d error=%s disconnectReason=%d", int(networkStep), esp_err_to_name(networkError), int(disconnectReason));
+    ESP_LOGI(TAG, "Wi-Fi scan available=1 state=%s", scanState == 1 ? "queued" : scanState == 2 ? "running" : "idle");
 }
 bool network_home_console(int argc, char **argv, esp_err_t &result) {
     if (!argc || (strcmp(argv[0], "wifi") && strcmp(argv[0], "home") && strcmp(argv[0], "schedule") && strcmp(argv[0], "clock") && strcmp(argv[0], "restart"))) return false;
     result = ESP_ERR_INVALID_ARG;
+    if (argc == 2 && !strcmp(argv[0], "wifi") && !strcmp(argv[1], "scan")) {
+        if (!storageOK || !phoneQueue) { result = ESP_ERR_INVALID_STATE; return true; }
+        int expected = 0;
+        if (!scanState.compare_exchange_strong(expected, 1)) { result = ESP_ERR_INVALID_STATE; return true; }
+        ESP_LOGI(TAG, "Wi-Fi scan requested");
+        result = launchNetworkTask();
+        if (result != ESP_OK) scanFailed(result);
+        return true;
+    }
     if (argc == 1 && (!strcmp(argv[0], "clock") || !strcmp(argv[0], "home"))) { network_home_status(); result = ESP_OK; return true; }
     if (argc == 1 && !strcmp(argv[0], "restart")) { ESP_LOGI(TAG, "Restarting with saved pairings and settings"); esp_restart(); }
     Settings candidate = settings;

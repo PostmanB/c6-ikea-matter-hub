@@ -11,6 +11,7 @@
       homeConfigured: false, homeRunning: false, optionalStorage: 'unknown', clock: 'unsynchronized',
       scheduleEnabled: false, scheduleTime: '06:00',
       networkStep: 0, networkError: 'ESP_OK', disconnectReason: 0,
+      scanSupported: false, wifiScanState: 'idle', wifiScanError: '', wifiNetworks: [], scanTotal: 0,
     };
   }
   function cleanLine(value) {
@@ -24,6 +25,28 @@
   function applyLine(state, raw, timestamp = Date.now()) {
     const line = cleanLine(raw);
     let m;
+    if (/home: Wi-Fi scan available=1/.test(line)) state.scanSupported = true;
+    if (/home: Wi-Fi scan (requested|started)$/.test(line)) {
+      state.scanSupported = true; state.wifiScanState = 'running'; state.wifiScanError = '';
+      state.wifiNetworks = []; state.scanTotal = 0;
+    }
+    if ((m = line.match(/home: Wi-Fi AP ssid=([0-9a-f]{2,64}) rssi=(-?\d+) auth=(\d+) channel=(\d+)$/i)) && state.wifiScanState === 'running') {
+      const hex = m[1].toLowerCase();
+      if (hex.length % 2 === 0 && !hex.match(/../g).includes('00')) {
+        const ssid = new TextDecoder().decode(Uint8Array.from(hex.match(/../g), byte => parseInt(byte, 16)));
+        const network = {hex, ssid, rssi: +m[2], auth: +m[3], channel: +m[4]};
+        const old = state.wifiNetworks.findIndex(value => value.hex === hex);
+        if (old >= 0 && state.wifiNetworks[old].rssi < network.rssi) state.wifiNetworks[old] = network;
+        else if (old < 0 && state.wifiNetworks.length < 20) state.wifiNetworks.push(network);
+        state.wifiNetworks.sort((a, b) => b.rssi - a.rssi);
+      }
+    }
+    if ((m = line.match(/home: Wi-Fi scan done count=(\d+) total=(\d+)$/))) {
+      state.wifiScanState = 'done'; state.scanTotal = +m[2];
+    }
+    if ((m = line.match(/home: Wi-Fi scan failed error=(\w+) status=(\d+)$/))) {
+      state.wifiScanState = 'error'; state.wifiScanError = m[1];
+    }
     if ((m = line.match(/home: Network step=(\d+) error=(\w+) disconnectReason=(\d+)/))) {
       state.networkStep = +m[1]; state.networkError = m[2]; state.disconnectReason = +m[3];
     }
@@ -76,6 +99,7 @@
   function redact(line, secrets = []) {
     let result = cleanLine(line).replace(/(matter esp hub pair \w+)\s+\S+/gi, '$1 [code hidden]');
     result = result.replace(/(matter esp hub (?:wifi|home))\s+[^\r\n]+/gi, '$1 [settings hidden]');
+    result = result.replace(/(home: Wi-Fi AP ssid=)[0-9a-f]+/gi, '$1[name hidden]');
     for (const secret of secrets) {
       if (secret) result = result.split(secret).join('[code hidden]');
     }

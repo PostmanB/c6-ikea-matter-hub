@@ -4,8 +4,8 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <title>C6 IKEA Hub · Setup</title>
-  <link rel="stylesheet" href="style.css?v=0.2">
-  <script src="protocol.js?v=0.2" defer></script><script src="setup.js?v=0.2" defer></script>
+  <link rel="stylesheet" href="style.css?v=0.2.1">
+  <script src="protocol.js?v=0.2.1" defer></script><script src="setup.js?v=0.2.1" defer></script>
 </head>
 <body>
 <main>
@@ -45,6 +45,10 @@
     <div class="step">04</div><div class="section-body"><h2 id="network-title">Clock and Apple Home · optional</h2>
       <p>Your remotes work without Wi-Fi. Connect the ESP to your <strong>2.4 GHz Wi-Fi</strong> to restore its clock after power loss and to control the light in Apple Home. Internet is used only for time sync; the light commands stay local.</p>
       <div id="network-status" class="notice" role="status" aria-live="polite">Connect a hub with the experimental Wi-Fi/HomeKit firmware to configure these features.</div>
+      <div class="wifi-discovery"><button id="wifi-scan" class="secondary" disabled>Find Wi-Fi networks</button>
+        <label for="wifi-networks">Nearby 2.4 GHz networks</label><select id="wifi-networks" disabled><option value="">Scan to find networks</option></select>
+        <div id="wifi-scan-status" class="small" role="status" aria-live="polite">Select a nearby network, or enter a hidden network’s name below.</div>
+      </div>
       <form id="wifi-form"><label for="wifi-ssid">Wi-Fi network name</label><input id="wifi-ssid" autocomplete="off" maxlength="32" disabled><label for="wifi-password">Wi-Fi password</label><input id="wifi-password" type="password" autocomplete="off" maxlength="64" disabled><button id="wifi-save" disabled>Save Wi-Fi</button></form>
       <p class="small">Credentials go directly to the ESP over USB and are saved there. This page never uploads or saves them on your computer. Leave the password empty only for an open network.</p>
       <form id="home-form"><label for="home-pin">Choose an 8-digit HomeKit PIN</label><input id="home-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" disabled><button id="home-save" disabled>Enable Apple Home</button></form>
@@ -52,7 +56,7 @@
       <form id="schedule-form"><label for="schedule-time">Daily turn-on time · Europe/Bratislava</label><input id="schedule-time" type="time" value="06:00" required disabled><button id="schedule-save" disabled>Set daily turn-on</button><button id="schedule-off" type="button" class="secondary" disabled>Disable schedule</button></form>
       <div id="network-message" class="notice" role="status" aria-live="polite"></div>
       <button id="restart" class="secondary" disabled>Restart ESP to apply Wi-Fi and HomeKit</button>
-      <ol><li>Save Wi-Fi, choose your PIN, set the schedule, then restart the ESP.</li><li>Connect your iPhone to the same home network. In Home, choose <strong>Add Accessory → More Options → C6 IKEA Light</strong>.</li><li>Choose <strong>Add Anyway</strong> for this DIY accessory, enter your PIN, and name the light.</li><li>Test light controls in Home and a Siri command. Then check all three physical remotes.</li></ol>
+      <ol><li>Save Wi-Fi, choose your PIN, optionally set a schedule, then restart the ESP.</li><li>Connect your iPhone to the same home network. In Home, choose <strong>Add Accessory → More Options → C6 IKEA Light</strong>.</li><li>Choose <strong>Add Anyway</strong> for this DIY accessory, enter your PIN, and name the light.</li><li>Test light controls in Home and a Siri command. Then check all three physical remotes.</li></ol>
       <p class="small">No HomePod or Apple TV is needed for local HomeKit control. This schedule runs on the ESP. Apple Home’s own automations and away-from-home control use a home hub. After a power cut, the ESP waits for time sync; a missed turn-on runs only within two minutes of its set time.</p>
     </div>
   </section>
