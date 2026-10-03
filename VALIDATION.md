@@ -17,8 +17,16 @@
   Full USB credential provisioning and iPhone pairing remain unverified.
 - Pre-update physical status: all three existing remotes subscribed, bulb state
   live, Thread role 3, SRP running, storage healthy, 197,248 bytes internal heap.
-- Full pre-update backup in progress. No new firmware flashed yet. Wi-Fi, NTP,
-  Apple Home/Siri, scheduled actions and unplugged coexistence remain pending.
+- Full 8 MB pre-update backup passed stub MD5 verification at 115200; a faster
+  attempt was rejected on an incomplete packet. All four update images flashed
+  successfully and passed esptool verification, without any credential erase.
+- Updated physical hub booted: all three remote subscriptions recovered, live
+  bulb state, Thread role 3/SRP running, healthy old/new storage, two-flash ready
+  sequence acknowledged, 116,024 bytes free heap / 94,208 largest block before
+  optional Wi-Fi/HAP activation. Headless UART-powered boot also saved a trace
+  with all pairings restored and four startup command acknowledgments.
+- Wi-Fi, NTP, Apple Home/Siri, scheduled actions and unplugged coexistence remain
+  pending private credential provisioning and physical tests.
 
 The hardware results below describe the previously tested offline release.
 
